@@ -67,6 +67,11 @@ class IndividualMember(models.Model):
 
     # Security PIN (default 0000)
     pin = models.CharField(max_length=256, default='0000')  # Will be hashed
+    
+    # PIN Reset Fields (for OTP-based PIN reset)
+    pending_reset_pin = models.CharField(max_length=6, blank=True, null=True)  # Temp storage during OTP verification
+    pending_reset_pin_otp = models.CharField(max_length=6, blank=True, null=True)  # OTP to verify
+    pending_reset_pin_expiry = models.DateTimeField(blank=True, null=True)  # OTP expiry time
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

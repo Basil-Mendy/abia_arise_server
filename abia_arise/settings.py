@@ -9,15 +9,21 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-your-secret-key-change-in-production')
+# ========================
+# SECURITY SETTINGS
+# ========================
+SECRET_KEY = config('SECRET_KEY')  # MUST be set in Railway
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    ".railway.app",
+]
 
-ALLOWED_HOSTS = ['*']
-
-# Application definition
+# ========================
+# APPLICATIONS
+# ========================
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -25,16 +31,25 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Third-party
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+
+    # Local apps
     'accounts',
     'core',
 ]
 
+# ========================
+# MIDDLEWARE
+# ========================
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Static files
     'corsheaders.middleware.CorsMiddleware',
+
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -45,6 +60,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'abia_arise.urls'
 
+# ========================
+# TEMPLATES
+# ========================
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -63,50 +81,57 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'abia_arise.wsgi.application'
 
-# Database
+# ========================
+# DATABASE (Railway PostgreSQL)
+# ========================
 DATABASES = {
     'default': {
-        'ENGINE': config('DB_ENGINE', default='django.db.backends.postgresql'),
-        'NAME': config('DB_NAME', default='abia_arise_db'),
-        'USER': config('DB_USER', default='abia_user'),
-        'PASSWORD': config('DB_PASSWORD', default='abia_password321'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432'),
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("DB_NAME"),
+        'USER': os.getenv("DB_USER"),
+        'PASSWORD': os.getenv("DB_PASSWORD"),
+        'HOST': os.getenv("DB_HOST"),
+        'PORT': os.getenv("DB_PORT", "5432"),
     }
 }
 
-# Password validation
+# ========================
+# PASSWORD VALIDATION
+# ========================
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Internationalization
+# ========================
+# INTERNATIONALIZATION
+# ========================
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files
+# ========================
+# STATIC & MEDIA FILES
+# ========================
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Default primary key field type
+# ========================
+# DEFAULT PRIMARY KEY
+# ========================
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# REST Framework settings
+# ========================
+# REST FRAMEWORK
+# ========================
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -123,25 +148,57 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Simple JWT settings
+# ========================
+# JWT SETTINGS
+# ========================
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(seconds=config('JWT_ACCESS_TOKEN_LIFETIME', default=3600, cast=int)),
-    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=config('JWT_REFRESH_TOKEN_LIFETIME', default=86400, cast=int)),
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        seconds=config('JWT_ACCESS_TOKEN_LIFETIME', default=3600, cast=int)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        seconds=config('JWT_REFRESH_TOKEN_LIFETIME', default=86400, cast=int)
+    ),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': False,
 }
 
-# CORS settings
-cors_origins = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000')
+# ========================
+# CORS SETTINGS (FROM ENV)
+# ========================
+cors_origins = config(
+    'CORS_ALLOWED_ORIGINS',
+    default='http://localhost:5173'
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(',')]
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Email Configuration
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+# ========================
+# CSRF SETTINGS (FROM ENV)
+# ========================
+csrf_origins = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default='http://localhost:5173'
+)
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(',')]
+
+# ========================
+# SECURITY (PRODUCTION)
+# ========================
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# ========================
+# EMAIL CONFIGURATION
+# ========================
+EMAIL_BACKEND = config(
+    'EMAIL_BACKEND',
+    default='django.core.mail.backends.console.EmailBackend'
+)
 EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@abiariseacampaign.com')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL',default='noreply@abiariseacampaign.com')

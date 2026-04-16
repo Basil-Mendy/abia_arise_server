@@ -17,6 +17,7 @@ from .serializers import (
     IndividualMemberSerializer, ProGroupSerializer, GroupMemberSerializer,
     MemberActivationSerializer, ExcelMemberImportSerializer,
     GenerateResetPinSerializer, VerifyResetPinOtpSerializer, VerifyResetPinSerializer,
+    GenerateIndividualResetPinSerializer, VerifyIndividualResetPinOtpSerializer, VerifyIndividualResetPinSerializer,
     AddMemberToGroupSerializer,
     MembershipUserListSerializer, MembershipUserDetailSerializer, MembershipUserCreateSerializer,
     MembershipGroupSerializer, GroupMembershipDetailSerializer, GroupMembersListSerializer,
@@ -473,6 +474,247 @@ class IndividualMemberViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=False, methods=['post'])
+    def generate_reset_pin(self, request):
+        """
+        Generate a reset PIN for individual member
+        Sends OTP to registered email
+        
+        Request payload:
+        {
+            'member_id': 'AB/OW/0001',
+            'password': 'last_4_digits_of_phone',
+            'desired_pin': '123456'
+        }
+        """
+        serializer = GenerateIndividualResetPinSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        member_id = serializer.validated_data['member_id']
+        password = serializer.validated_data['password']
+        desired_pin = serializer.validated_data['desired_pin']
+
+        try:
+            member = IndividualMember.objects.get(abia_arise_id=member_id)
+            
+            # Verify password (last 4 digits of phone)
+            if member.password_hash != password:
+                return Response({
+                    'success': False,
+                    'message': 'Unauthorized. Invalid credentials.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Generate 6-digit OTP
+            otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+            
+            # Store pending PIN and OTP
+            member.pending_reset_pin = desired_pin
+            member.pending_reset_pin_otp = otp
+            member.pending_reset_pin_expiry = timezone.now() + timedelta(minutes=10)
+            member.save()
+            
+            print(f"✓ Generated OTP for member {member_id}: {otp}")
+            print(f"✓ Sending OTP to: {member.email}")
+
+            # Flag to track if email was sent successfully
+            email_sent_success = False
+            email_error_message = None
+
+            # Send OTP to email
+            try:
+                email_subject = f"Abia Arise - Reset PIN Verification OTP"
+                email_message = f"""Hello {member.get_full_name()},
+
+A reset PIN has been requested for your Abia Arise account.
+
+Your OTP for verification: {otp}
+
+This OTP is valid for 10 minutes.
+
+If you didn't request this, please ignore this email.
+
+Regards,
+Abia Arise Team"""
+                
+                send_mail(
+                    email_subject,
+                    email_message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [member.email],
+                    fail_silently=True
+                )
+                email_sent_success = True
+                print(f"✓ OTP email sent successfully to {member.email}")
+            except Exception as email_error:
+                email_error_message = str(email_error)
+                print(f"✗ Error sending OTP email: {email_error_message}")
+
+            response_data = {
+                'success': True,
+                'message': 'OTP generated successfully. You have 10 minutes to verify.',
+                'member_id': member.abia_arise_id,
+                'member_name': member.get_full_name(),
+                'email_sent': email_sent_success
+            }
+            
+            if not email_sent_success and email_error_message:
+                response_data['email_warning'] = f'OTP was not sent to email due to: {email_error_message}'
+            
+            # For development/testing: include OTP in response (REMOVE FOR PRODUCTION)
+            if settings.DEBUG:
+                response_data['otp'] = otp
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except IndividualMember.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Member not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            error_message = str(e)
+            print(f"✗ Error in generate_reset_pin: {error_message}")
+            return Response({
+                'success': False,
+                'error': error_message
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def verify_reset_pin_otp(self, request):
+        """
+        Verify OTP and set the reset PIN
+        
+        Request payload:
+        {
+            'member_id': 'AB/OW/0001',
+            'otp': '123456'
+        }
+        """
+        serializer = VerifyIndividualResetPinOtpSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        member_id = serializer.validated_data['member_id']
+        otp = serializer.validated_data['otp']
+
+        try:
+            member = IndividualMember.objects.get(abia_arise_id=member_id)
+            
+            print(f"✓ Verifying OTP for member {member_id}")
+            print(f"✓ Received OTP: {otp}")
+            print(f"✓ Stored OTP: {member.pending_reset_pin_otp}")
+            print(f"✓ OTP Expiry: {member.pending_reset_pin_expiry}")
+            print(f"✓ Current Time: {timezone.now()}")
+            
+            # Check if OTP is still valid
+            if not member.pending_reset_pin_expiry:
+                print(f"✗ OTP expiry not set for member {member_id}")
+                return Response({
+                    'success': False,
+                    'message': 'OTP has expired. No OTP found. Please generate a new one.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if timezone.now() > member.pending_reset_pin_expiry:
+                print(f"✗ OTP expired for member {member_id}")
+                return Response({
+                    'success': False,
+                    'message': 'OTP has expired. Please generate a new one.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Verify OTP matches
+            if member.pending_reset_pin_otp != otp:
+                print(f"✗ OTP mismatch for member {member_id}: expected {member.pending_reset_pin_otp}, got {otp}")
+                return Response({
+                    'success': False,
+                    'message': 'Invalid OTP. Please try again.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            # OTP verified, set the reset PIN
+            print(f"✓ OTP verified. Setting reset PIN: {member.pending_reset_pin}")
+            member.pin = member.pending_reset_pin
+            member.pending_reset_pin = None
+            member.pending_reset_pin_otp = None
+            member.pending_reset_pin_expiry = None
+            member.save()
+            
+            print(f"✓ Reset PIN set successfully for member {member_id}: {member.pin}")
+
+            return Response({
+                'success': True,
+                'message': 'Reset PIN verified and set successfully!',
+                'member_id': member.abia_arise_id,
+                'reset_pin': member.pin
+            }, status=status.HTTP_200_OK)
+
+        except IndividualMember.DoesNotExist:
+            print(f"✗ Member not found: {member_id}")
+            return Response({
+                'success': False,
+                'message': 'Member not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            error_message = str(e)
+            print(f"✗ Error in verify_reset_pin_otp: {error_message}")
+            return Response({
+                'success': False,
+                'error': error_message
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def verify_reset_pin(self, request):
+        """
+        Verify reset PIN (used to check if PIN is correct before allowing updates)
+        
+        Request payload:
+        {
+            'member_id': 'AB/OW/0001',
+            'reset_pin': '123456'
+        }
+        """
+        serializer = VerifyIndividualResetPinSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        member_id = serializer.validated_data['member_id']
+        reset_pin = serializer.validated_data['reset_pin']
+
+        try:
+            member = IndividualMember.objects.get(abia_arise_id=member_id)
+            
+            if str(member.pin) != str(reset_pin):
+                return Response({
+                    'success': False,
+                    'message': 'Invalid PIN.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+
+            return Response({
+                'success': True,
+                'message': 'PIN verified successfully!',
+                'member_id': member.abia_arise_id,
+                'member_name': member.get_full_name()
+            }, status=status.HTTP_200_OK)
+
+        except IndividualMember.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Member not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
     def login(self, request):
         """
         Login for individual members
@@ -500,14 +742,16 @@ class IndividualMemberViewSet(viewsets.ModelViewSet):
             expected_password = member.password_hash or (member.phone_number[-4:] if member.phone_number else None)
             
             if expected_password and expected_password == password:
-                # Generate JWT token
-                refresh = RefreshToken.for_user(member.user) if hasattr(member, 'user') and member.user else None
-                token = str(refresh.access_token) if refresh else None
+                # Generate token using REST framework's TokenAuthentication
+                # Since member has ID, we can use that directly
+                token_value = hashlib.sha256(
+                    f"{member.id}:{member.abia_arise_id}:{settings.SECRET_KEY}".encode()
+                ).hexdigest()
                 
                 return Response({
                     'success': True,
                     'message': 'Login successful',
-                    'token': token,
+                    'token': token_value,
                     'member_id': member.id,
                     'abia_arise_id': member.abia_arise_id,
                     'user': {
@@ -941,10 +1185,15 @@ class ProGroupViewSet(viewsets.ModelViewSet):
                 user_name = group.secretary_name
             
             if user_role:
+                # Generate token for group login
+                token_value = hashlib.sha256(
+                    f"{group.id}:{group.group_license_number}:{settings.SECRET_KEY}".encode()
+                ).hexdigest()
+                
                 return Response({
                     'success': True,
                     'message': 'Login successful',
-                    'token': None,  # Could generate JWT if needed
+                    'token': token_value,
                     'group_license_number': group.group_license_number,
                     'user': {
                         'name': group.name,

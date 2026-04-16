@@ -119,6 +119,35 @@ class VerifyResetPinSerializer(serializers.Serializer):
     reset_pin = serializers.CharField(max_length=6, min_length=6)
 
 
+# ==========================================
+# INDIVIDUAL MEMBER PIN RESET SERIALIZERS
+# ==========================================
+
+class GenerateIndividualResetPinSerializer(serializers.Serializer):
+    """
+    Serializer for generating reset PIN for individual member
+    """
+    member_id = serializers.CharField(max_length=30)  # abia_arise_id
+    password = serializers.CharField(max_length=255)  # Last 4 digits of phone for verification
+    desired_pin = serializers.CharField(max_length=6, min_length=6)  # 6 digit PIN
+
+
+class VerifyIndividualResetPinOtpSerializer(serializers.Serializer):
+    """
+    Serializer for verifying OTP during reset PIN generation for individual member
+    """
+    member_id = serializers.CharField(max_length=30)  # abia_arise_id
+    otp = serializers.CharField(max_length=6, min_length=6)
+
+
+class VerifyIndividualResetPinSerializer(serializers.Serializer):
+    """
+    Serializer for verifying reset PIN (activating reset mode) for individual member
+    """
+    member_id = serializers.CharField(max_length=30)  # abia_arise_id
+    reset_pin = serializers.CharField(max_length=6, min_length=6)
+
+
 class AddMemberToGroupSerializer(serializers.Serializer):
     """
     Serializer for adding a new member to group (manual add)
